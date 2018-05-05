@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="zh">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"> 
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>WebGL</title>
+	<link rel="stylesheet" type="text/css" href="css/normalize.css" />
+	<link rel="stylesheet" type="text/css" href="css/default.css">
+	<style>
+      html, body {
+        margin: 0px;
+        width: 100%;
+        height: 100%;
+      }
+      canvas {
+        width: 100%;
+        height: 100%;
+      }
+      #b {
+        position: absolute;
+        top: 10px;
+        width: 100%;
+        text-align: center;
+        z-index: 2;
+      }
+    </style>
+</head>
+<body style="background-color:black;">
+	<div class="htmleaf-content">
+		<canvas id="c"></canvas>
+	</div>
+<script id="vs" type="notjs">  //顶点着色器
+uniform mat4 u_worldViewProjection;
+uniform vec3 u_lightWorldPos;
+uniform mat4 u_world;
+uniform mat4 u_viewInverse;
+uniform mat4 u_worldInverseTranspose;
+
+attribute vec4 a_position;
+attribute vec3 a_normal;
+attribute vec2 a_texcoord;
+
+varying vec4 v_position;
+varying vec2 v_texCoord;
+varying vec3 v_normal;
+varying vec3 v_surfaceToLight;
+varying vec3 v_surfaceToView;
+
+void main() {
+  v_texCoord = a_texcoord;
+  v_position = (u_worldViewProjection * a_position);
+  v_normal = (u_worldInverseTranspose * vec4(a_normal, 0)).xyz;
+  v_surfaceToLight = u_lightWorldPos - (u_world * a_position).xyz;
+  v_surfaceToView = (u_viewInverse[3] - (u_world * a_position)).xyz;
+  gl_Position = v_position;
+}
+  </script>
+<script id="fs" type="notjs">	//片段着色器
+precision mediump float;
+
+varying vec4 v_position;
+varying vec2 v_texCoord;
+varying vec3 v_normal;
+varying vec3 v_surfaceToLight;
+varying vec3 v_surfaceToView;
+
+uniform vec4 u_lightColor;
+uniform vec4 u_ambient;
+uniform sampler2D u_diffuse;
+uniform vec4 u_specular;
+uniform float u_shininess;
+uniform float u_specularFactor;
+
+vec4 lit(float l ,float h, float m) {
+  return vec4(1.0,
+              max(l, 0.0),
+              (l > 0.0) ? pow(max(0.0, h), m) : 0.0,
+              1.0);
+}
+
+void main() {
+  vec4 diffuseColor = texture2D(u_diffuse, v_texCoord);
+  vec3 a_normal = normalize(v_normal);
+  vec3 surfaceToLight = normalize(v_surfaceToLight);
+  vec3 surfaceToView = normalize(v_surfaceToView);
+  vec3 halfVector = normalize(surfaceToLight + surfaceToView);
+  vec4 litR = lit(dot(a_normal, surfaceToLight),
+                    dot(a_normal, halfVector), u_shininess);
+  vec4 outColor = vec4((
+  u_lightColor * (diffuseColor * litR.y + diffuseColor * u_ambient +
+                u_specular * litR.z * u_specularFactor)).rgb,
+      diffuseColor.a);
+  gl_FragColor = outColor;
+}
+  </script>
+  <script src="dist/twgl-full.min.js"></script>
+  <script>
+    "use strict";
+    twgl.setAttributePrefix("a_");
+    var m4 = twgl.m4;
+    var gl = twgl.getWebGLContext(document.getElementById("c"));
+    var programInfo = twgl.createProgramInfo(gl, ["vs", "fs"]);       //编译着色器并查找位置
+
+    var arrays_trigger = {
+      position: [-1, 1, 1, 1, 1, 1, 1, 1, -1],
+      normal:   [0, 1, 0, 0, 1, 0, 0, 1, 0],
+      texcoord: [1, 0, 0, 0, 0, 1],
+      indices:  [0, 1, 2],
+    };
+	var arrays_place = {
+      position: [-1, 0, 1, 1, 0, 1, 1, 0, -1, -1, 0, -1],
+      normal:   [-1, 0, 1, 1, 0, 1, 1, 0, -1, -1, 0, -1],
+      texcoord: [1, 0, 0, 0, 0, 1, 1, 1],
+      indices:  [0, 1, 2, 0, 2, 3],
+    };
+    var bufferInfo_trigger = twgl.createBufferInfoFromArrays(gl, arrays_trigger);    //插件缓冲区和属性的设置器
+	var bufferInfo_place = twgl.createBufferInfoFromArrays(gl, arrays_place);    //插件缓冲区和属性的设置器
+	var tex_trigger = twgl.createTexture(gl, {
+      min: gl.NEAREST,
+      mag: gl.NEAREST,
+      src: [
+        255, 0, 0, 0,
+      ],
+    });
+	var tex_place = twgl.createTexture(gl, {
+      min: gl.NEAREST,
+      mag: gl.NEAREST,
+      src: [
+        255, 255, 255, 0,
+      ],
+    });
+    var uniforms_trigger = {         //设置物体属性
+      u_lightWorldPos: [1, 8, -10],
+      u_lightColor: [1, 0.8, 0.8, 1],
+      u_ambient: [0, 0, 0, 1],
+      u_specular: [1, 1, 1, 1],
+      u_shininess: 50,
+      u_specularFactor: 1,
+	  u_diffuse: tex_trigger,
+    };
+	var uniforms_place = {         //设置物体属性
+      u_lightWorldPos: [1, 8, -10],
+      u_lightColor: [1, 0.8, 0.8, 1],
+      u_ambient: [0, 0, 0, 1],
+      u_specular: [1, 1, 1, 1],
+      u_shininess: 50,
+      u_specularFactor: 1,
+	  u_diffuse: tex_place,
+    };
+	function drawPlace() {
+            twgl.resizeCanvasToDisplaySize(gl.canvas);
+			  gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+			  gl.enable(gl.DEPTH_TEST);
+			  gl.enable(gl.CULL_FACE);
+			  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+			  var projection = m4.perspective(30 * Math.PI / 180, gl.canvas.clientWidth / gl.canvas.clientHeight, 0.5, 10);
+			  var eye = [1, 4, -6];
+			  var target = [0, 0, 0];
+			  var up = [0, 1, 0];
+			  
+			  var camera = m4.lookAt(eye, target, up);
+			  var view = m4.inverse(camera);
+			  var viewProjection = m4.multiply(view, projection);
+			  var world = m4.rotationY(time);
+			  uniforms_place.u_viewInverse = camera;
+			  uniforms_place.u_world = world;
+			  uniforms_place.u_worldInverseTranspose = m4.transpose(m4.inverse(world));
+			  uniforms_place.u_worldViewProjection = m4.multiply(world, viewProjection);
+			  gl.useProgram(programInfo.program);
+			  twgl.setBuffersAndAttributes(gl, programInfo, bufferInfo_place);    //绑定缓冲区并设置属性
+			  twgl.setUniforms(programInfo, uniforms_place);                      //设置uniforms
+			  gl.drawElements(gl.TRIANGLES, bufferInfo_place.numElements, gl.UNSIGNED_SHORT, 0);
+        }
+    function render_trigger(time) {
+      time *= 0.0006;
+      twgl.resizeCanvasToDisplaySize(gl.canvas);
+      gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+      gl.enable(gl.DEPTH_TEST);
+      gl.enable(gl.CULL_FACE);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+      var projection = m4.perspective(30 * Math.PI / 180, gl.canvas.clientWidth / gl.canvas.clientHeight, 0.5, 10);
+      var eye = [1, 4, -6];
+      var target = [0, 0, 0];
+      var up = [0, 1, 0];
+
+      var camera = m4.lookAt(eye, target, up);
+      var view = m4.inverse(camera);
+      var viewProjection = m4.multiply(view, projection);
+      var world = m4.rotationY(time);
+
+      uniforms_trigger.u_viewInverse = camera;
+      uniforms_trigger.u_world = world;
+      uniforms_trigger.u_worldInverseTranspose = m4.transpose(m4.inverse(world));
+      uniforms_trigger.u_worldViewProjection = m4.multiply(world, viewProjection);
+      gl.useProgram(programInfo.program);
+      twgl.setBuffersAndAttributes(gl, programInfo, bufferInfo_trigger);    //绑定缓冲区并设置属性
+      twgl.setUniforms(programInfo, uniforms_trigger);                      //设置uniforms
+      gl.drawElements(gl.TRIANGLES, bufferInfo_trigger.numElements, gl.UNSIGNED_SHORT, 0);
+      requestAnimationFrame(render_trigger);
+    }
+	drawPlace();
+    requestAnimationFrame(render_trigger);
+  </script>
+</body>
+</html>
+
+
+
